@@ -24,6 +24,9 @@ public class Libro {
 
     private String imagen;
 
+    // Nombre del archivo digital (PDF) del libro.
+    private String archivo;
+
     @Column(columnDefinition = "TEXT")
     private String descripcion;
 
@@ -116,6 +119,14 @@ public class Libro {
 
     public void setImagen(String imagen) {
         this.imagen = imagen;
+    }
+
+    public String getArchivo() {
+        return archivo;
+    }
+
+    public void setArchivo(String archivo) {
+        this.archivo = archivo;
     }
 
     public String getDescripcion() {

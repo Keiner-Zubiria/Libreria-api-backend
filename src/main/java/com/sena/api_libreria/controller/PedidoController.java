@@ -18,10 +18,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
 
+import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
+
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/pedidos")
@@ -74,7 +77,7 @@ public class PedidoController {
         Pedido pedido = new Pedido();
 
         pedido.setUsuario(usuario);
-        pedido.setFecha(LocalDateTime.now());
+        pedido.setFecha(LocalDateTime.now(ZoneId.of("America/Bogota")));
         pedido.setEstado("Pendiente");
         pedido.setMetodoPago(request.getMetodoPago());
 
@@ -104,7 +107,9 @@ public class PedidoController {
                         .body("Libro no encontrado: " + producto.getId());
             }
 
-            if ("Fisico".equalsIgnoreCase(producto.getFormato())) {
+            String formatoNormalizado = normalizarFormato(producto.getFormato());
+
+            if ("Fisico".equalsIgnoreCase(formatoNormalizado)) {
 
                 if (libro.getStock() < producto.getQuantity()) {
 
@@ -143,7 +148,8 @@ public class PedidoController {
         boolean todosVirtuales = request.getProductos()
                 .stream()
                 .allMatch(producto ->
-                        "Virtual".equalsIgnoreCase(producto.getFormato())
+                        "Virtual".equalsIgnoreCase(
+                                normalizarFormato(producto.getFormato()))
                 );
 
         boolean pagoEnLinea =
@@ -168,12 +174,14 @@ public class PedidoController {
 
             DetallePedido detalle = new DetallePedido();
 
+            String formatoNorm = normalizarFormato(producto.getFormato());
+
             detalle.setPedido(pedidoGuardado);
             detalle.setLibro(libro);
             detalle.setCantidad(producto.getQuantity());
-            detalle.setFormato(producto.getFormato());
+            detalle.setFormato(formatoNorm);
 
-            if ("Fisico".equalsIgnoreCase(producto.getFormato())) {
+            if ("Fisico".equalsIgnoreCase(formatoNorm)) {
 
                 detalle.setPrecio(libro.getPrecioFisico());
 
@@ -192,6 +200,23 @@ public class PedidoController {
         return ResponseEntity.ok(
                 convertirPedido(pedidoGuardado)
         );
+    }
+
+    // Quita tildes y convierte a minúsculas para comparar formatos.
+    private String normalizarFormato(String formato) {
+
+        if (formato == null) return "";
+
+        String normalizado = Normalizer
+                .normalize(formato, Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+                .trim()
+                .toLowerCase();
+
+        if (normalizado.equals("fisico")) return "Fisico";
+        if (normalizado.equals("virtual")) return "Virtual";
+
+        return formato;
     }
 
     // Simula el procesamiento de un pago y devuelve el resultado.

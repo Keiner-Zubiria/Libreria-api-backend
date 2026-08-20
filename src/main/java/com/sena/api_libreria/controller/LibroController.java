@@ -14,6 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.text.Normalizer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -274,7 +275,12 @@ public class LibroController {
                 .filter(pedido -> "Pagado".equalsIgnoreCase(pedido.getEstadoPago()))
                 .flatMap(pedido -> pedido.getDetalles().stream())
                 .anyMatch(detalle -> detalle.getLibro().getId().equals(id)
-                        && "Virtual".equalsIgnoreCase(detalle.getFormato()));
+                        && "Virtual".equalsIgnoreCase(
+                                detalle.getFormato() != null
+                                    ? Normalizer.normalize(detalle.getFormato(),
+                                            Normalizer.Form.NFD)
+                                            .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+                                    : ""));
 
         if (!comprado) {
             return ResponseEntity.status(403).body("Debes comprar este libro para descargarlo.");

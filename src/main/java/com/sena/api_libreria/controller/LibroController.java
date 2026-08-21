@@ -1,8 +1,7 @@
 package com.sena.api_libreria.controller;
 
-import com.sena.api_libreria.model.DetallePedido;
+import com.sena.api_libreria.config.CloudinaryService;
 import com.sena.api_libreria.model.Libro;
-import com.sena.api_libreria.model.Pedido;
 import com.sena.api_libreria.model.Usuario;
 import com.sena.api_libreria.repository.LibroRepository;
 import com.sena.api_libreria.repository.PedidoRepository;
@@ -16,14 +15,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.text.Normalizer;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/libros")
@@ -31,13 +24,16 @@ public class LibroController {
 
     private final LibroRepository libroRepository;
     private final PedidoRepository pedidoRepository;
+    private final CloudinaryService cloudinaryService;
 
     public LibroController(
             LibroRepository libroRepository,
-            PedidoRepository pedidoRepository
+            PedidoRepository pedidoRepository,
+            CloudinaryService cloudinaryService
     ) {
         this.libroRepository = libroRepository;
         this.pedidoRepository = pedidoRepository;
+        this.cloudinaryService = cloudinaryService;
     }
 
     @GetMapping
@@ -50,34 +46,6 @@ public class LibroController {
         Optional<Libro> libro = libroRepository.findById(id);
         return libro.map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-
-    // Sube un archivo (imagen o PDF) a la carpeta de archivos subidos.
-    private String guardarArchivo(MultipartFile archivo, Path carpeta) throws IOException {
-
-        if (!Files.exists(carpeta)) {
-            Files.createDirectories(carpeta);
-        }
-
-        String nombreArchivo = UUID.randomUUID() + "_" + archivo.getOriginalFilename();
-
-        Files.copy(
-                archivo.getInputStream(),
-                carpeta.resolve(nombreArchivo),
-                StandardCopyOption.REPLACE_EXISTING);
-
-        return nombreArchivo;
-    }
-
-    // Carpeta donde se guardan los archivos subidos (imágenes y PDFs).
-    private Path carpetaUploads() {
-
-        String carpeta = System.getenv("UPLOADS_DIR");
-        if (carpeta == null || carpeta.isBlank()) {
-            carpeta = "uploads";
-        }
-
-        return Paths.get(carpeta);
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -131,14 +99,12 @@ public class LibroController {
 
         libro.setDestacado(destacado);
 
-        Path carpeta = carpetaUploads();
-
         if (imagen != null && !imagen.isEmpty()) {
-            libro.setImagen(guardarArchivo(imagen, carpeta));
+            libro.setImagen(cloudinaryService.subirArchivo(imagen, "libreria/imagenes"));
         }
 
         if (archivo != null && !archivo.isEmpty()) {
-            libro.setArchivo(guardarArchivo(archivo, carpeta));
+            libro.setArchivo(cloudinaryService.subirArchivo(archivo, "libreria/pdfs"));
         }
 
         return ResponseEntity.ok(libroRepository.save(libro));
@@ -183,6 +149,20 @@ public class LibroController {
 
         Libro libro = libroOpt.get();
 
+        if (imagen != null && !imagen.isEmpty()) {
+            if (libro.getImagen() != null && !libro.getImagen().isBlank()) {
+                cloudinaryService.eliminarArchivo(libro.getImagen());
+            }
+            libro.setImagen(cloudinaryService.subirArchivo(imagen, "libreria/imagenes"));
+        }
+
+        if (archivo != null && !archivo.isEmpty()) {
+            if (libro.getArchivo() != null && !libro.getArchivo().isBlank()) {
+                cloudinaryService.eliminarArchivo(libro.getArchivo());
+            }
+            libro.setArchivo(cloudinaryService.subirArchivo(archivo, "libreria/pdfs"));
+        }
+
         libro.setTitulo(titulo);
         libro.setAutor(autor);
         libro.setCategoria(categoria);
@@ -202,16 +182,6 @@ public class LibroController {
         libro.setVendidos(vendidos);
 
         libro.setDestacado(destacado);
-
-        Path carpeta = carpetaUploads();
-
-        if (imagen != null && !imagen.isEmpty()) {
-            libro.setImagen(guardarArchivo(imagen, carpeta));
-        }
-
-        if (archivo != null && !archivo.isEmpty()) {
-            libro.setArchivo(guardarArchivo(archivo, carpeta));
-        }
 
         return ResponseEntity.ok(libroRepository.save(libro));
     }
@@ -245,7 +215,6 @@ public class LibroController {
         return ResponseEntity.ok(libroRepository.save(libro));
     }
 
-    // Descarga el archivo digital solo si el usuario lo compró.
     @GetMapping("/{id}/descargar")
     public ResponseEntity<?> descargarLibro(@PathVariable Long id) throws IOException {
 
@@ -258,7 +227,7 @@ public class LibroController {
         Libro libro = libroOpt.get();
 
         if (libro.getArchivo() == null || libro.getArchivo().isBlank()) {
-            return ResponseEntity.badRequest().body("Este libro no tiene versión digital.");
+            return ResponseEntity.badRequest().body("Este libro no tiene version digital.");
         }
 
         Authentication autenticacion =
@@ -268,7 +237,6 @@ public class LibroController {
 
         Usuario usuario = (Usuario) autenticacion.getPrincipal();
 
-        // Verifica que el usuario haya comprado una copia virtual del libro.
         boolean comprado = pedidoRepository.findByUsuarioId(usuario.getId())
                 .stream()
                 .filter(pedido -> !"Cancelado".equalsIgnoreCase(pedido.getEstado()))
@@ -286,34 +254,35 @@ public class LibroController {
             return ResponseEntity.status(403).body("Debes comprar este libro para descargarlo.");
         }
 
-        Path rutaArchivo = carpetaUploads().resolve(libro.getArchivo());
+        String archivo = libro.getArchivo();
 
-        if (!Files.exists(rutaArchivo)) {
-            return ResponseEntity.status(404).body("El archivo del libro no se encontró.");
+        if (archivo.startsWith("http")) {
+            return ResponseEntity.status(302)
+                    .header(HttpHeaders.LOCATION, archivo)
+                    .header("X-File-Name", archivo.substring(archivo.lastIndexOf('/') + 1))
+                    .build();
         }
 
-        // Usa el nombre original del archivo subido (ej. "1984.pdf"),
-        // quitando el prefijo UUID con el que se guardó.
-        String nombreOriginal = libro.getArchivo();
-        int separador = nombreOriginal.indexOf("_");
-        if (separador >= 0) {
-            nombreOriginal = nombreOriginal.substring(separador + 1);
-        }
-
-        InputStream stream = Files.newInputStream(rutaArchivo);
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreOriginal + "\"")
-                .header("X-File-Name", nombreOriginal)
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(stream.readAllBytes());
+        return ResponseEntity.status(404).body("El archivo del libro no se encontro.");
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> eliminarLibro(@PathVariable Long id) {
-        if (!libroRepository.existsById(id)) {
+        Optional<Libro> libroOpt = libroRepository.findById(id);
+
+        if (libroOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+
+        Libro libro = libroOpt.get();
+
+        if (libro.getImagen() != null && !libro.getImagen().isBlank()) {
+            cloudinaryService.eliminarArchivo(libro.getImagen());
+        }
+        if (libro.getArchivo() != null && !libro.getArchivo().isBlank()) {
+            cloudinaryService.eliminarArchivo(libro.getArchivo());
+        }
+
         libroRepository.deleteById(id);
         return ResponseEntity.ok("Libro eliminado correctamente.");
     }

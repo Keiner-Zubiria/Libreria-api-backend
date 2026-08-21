@@ -45,8 +45,18 @@ public class LibroController {
     }
 
     @GetMapping
-    public List<Libro> listarLibros() {
-        return libroRepository.findAll();
+    public List<Libro> listarLibros(
+            @RequestParam(required = false) Boolean admin
+    ) {
+        if (Boolean.TRUE.equals(admin)) {
+            return libroRepository.findAll();
+        }
+        return libroRepository.findActivos();
+    }
+
+    @GetMapping("/destacados")
+    public List<Libro> listarDestacados() {
+        return libroRepository.findDestacadosActivos();
     }
 
     @GetMapping("/{id}")
@@ -107,6 +117,8 @@ public class LibroController {
 
         libro.setDestacado(destacado);
 
+        libro.setActivo(true);
+
         if (imagen != null && !imagen.isEmpty()) {
             libro.setImagen(cloudinaryService.subirArchivo(imagen, "libreria/imagenes"));
         }
@@ -142,6 +154,8 @@ public class LibroController {
             @RequestParam Integer vendidos,
 
             @RequestParam Boolean destacado,
+
+            @RequestParam(required = false) Boolean activo,
 
             @RequestParam(required = false) MultipartFile imagen,
 
@@ -190,6 +204,10 @@ public class LibroController {
         libro.setVendidos(vendidos);
 
         libro.setDestacado(destacado);
+
+        if (activo != null) {
+            libro.setActivo(activo);
+        }
 
         return ResponseEntity.ok(libroRepository.save(libro));
     }
@@ -296,6 +314,22 @@ public class LibroController {
         return ResponseEntity.status(404).body("El archivo del libro no se encontro.");
     }
 
+    @PutMapping("/{id}/activo")
+    public ResponseEntity<?> toggleActivo(@PathVariable Long id) {
+        Optional<Libro> libroOpt = libroRepository.findById(id);
+
+        if (libroOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Libro libro = libroOpt.get();
+        boolean actual = Boolean.TRUE.equals(libro.getActivo());
+        libro.setActivo(!actual);
+        libroRepository.save(libro);
+
+        return ResponseEntity.ok(libro);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> eliminarLibro(@PathVariable Long id) {
         Optional<Libro> libroOpt = libroRepository.findById(id);
@@ -306,18 +340,22 @@ public class LibroController {
 
         Libro libro = libroOpt.get();
 
-        if (detallePedidoRepository.existsByLibroId(id)) {
-            return ResponseEntity.badRequest().body("No se puede eliminar: el libro tiene pedidos asociados.");
+        if (Boolean.FALSE.equals(libro.getActivo())) {
+            if (detallePedidoRepository.existsByLibroId(id)) {
+                return ResponseEntity.badRequest().body("No se puede eliminar: el libro tiene pedidos asociados.");
+            }
+            if (libro.getImagen() != null && !libro.getImagen().isBlank()) {
+                cloudinaryService.eliminarArchivo(libro.getImagen());
+            }
+            if (libro.getArchivo() != null && !libro.getArchivo().isBlank()) {
+                cloudinaryService.eliminarArchivo(libro.getArchivo());
+            }
+            libroRepository.deleteById(id);
+            return ResponseEntity.ok("Libro eliminado permanentemente.");
         }
 
-        if (libro.getImagen() != null && !libro.getImagen().isBlank()) {
-            cloudinaryService.eliminarArchivo(libro.getImagen());
-        }
-        if (libro.getArchivo() != null && !libro.getArchivo().isBlank()) {
-            cloudinaryService.eliminarArchivo(libro.getArchivo());
-        }
-
-        libroRepository.deleteById(id);
-        return ResponseEntity.ok("Libro eliminado correctamente.");
+        libro.setActivo(false);
+        libroRepository.save(libro);
+        return ResponseEntity.ok("Libro desactivado correctamente.");
     }
 }

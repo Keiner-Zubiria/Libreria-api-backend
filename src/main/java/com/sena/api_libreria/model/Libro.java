@@ -36,6 +36,8 @@ public class Libro {
 
     private Boolean destacado;
 
+    private Boolean activo = true;
+
     public Libro() {
     }
 
@@ -159,5 +161,13 @@ public class Libro {
 
     public void setDestacado(Boolean destacado) {
         this.destacado = destacado;
+    }
+
+    public Boolean getActivo() {
+        return activo;
+    }
+
+    public void setActivo(Boolean activo) {
+        this.activo = activo;
     }
 }

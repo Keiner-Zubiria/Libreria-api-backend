@@ -28,21 +28,33 @@ class LibroControllerTest {
         libro.setAutor("Autor Test");
         libro.setPrecioFisico(25000.0);
         libro.setStock(10);
+        libro.setActivo(true);
         return libro;
     }
 
     @Test
-    void listarLibrosRetornaLista() {
+    void listarLibrosRetornaSoloActivos() {
+        when(libroRepository.findActivos()).thenReturn(List.of(
+                crearLibro(1L, "1984"),
+                crearLibro(2L, "Don Quijote")
+        ));
+
+        List<Libro> libros = controller.listarLibros(null);
+
+        assertEquals(2, libros.size());
+    }
+
+    @Test
+    void listarLibrosAdminRetornaTodos() {
         when(libroRepository.findAll()).thenReturn(List.of(
                 crearLibro(1L, "1984"),
                 crearLibro(2L, "Don Quijote")
         ));
 
-        List<Libro> libros = controller.listarLibros();
+        List<Libro> libros = controller.listarLibros(true);
 
         assertEquals(2, libros.size());
-        assertEquals("1984", libros.get(0).getTitulo());
-        assertEquals("Don Quijote", libros.get(1).getTitulo());
+        verify(libroRepository).findAll();
     }
 
     @Test
@@ -65,14 +77,43 @@ class LibroControllerTest {
     }
 
     @Test
-    void eliminarLibroExistenteRetorna200() {
-        when(libroRepository.findById(1L)).thenReturn(Optional.of(crearLibro(1L, "1984")));
+    void eliminarLibroActivoLoDesactiva() {
+        Libro libro = crearLibro(1L, "1984");
+        when(libroRepository.findById(1L)).thenReturn(Optional.of(libro));
+        when(libroRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var respuesta = controller.eliminarLibro(1L);
+
+        assertTrue(respuesta.getStatusCode().is2xxSuccessful());
+        assertFalse(libro.getActivo());
+        verify(libroRepository).save(libro);
+        verify(libroRepository, never()).deleteById(anyLong());
+    }
+
+    @Test
+    void eliminarLibroInactivoSinPedidosLoBorra() {
+        Libro libro = crearLibro(1L, "1984");
+        libro.setActivo(false);
+        when(libroRepository.findById(1L)).thenReturn(Optional.of(libro));
         when(detallePedidoRepository.existsByLibroId(1L)).thenReturn(false);
 
         var respuesta = controller.eliminarLibro(1L);
 
         assertTrue(respuesta.getStatusCode().is2xxSuccessful());
         verify(libroRepository).deleteById(1L);
+    }
+
+    @Test
+    void eliminarLibroInactivoConPedidosNoBorra() {
+        Libro libro = crearLibro(1L, "1984");
+        libro.setActivo(false);
+        when(libroRepository.findById(1L)).thenReturn(Optional.of(libro));
+        when(detallePedidoRepository.existsByLibroId(1L)).thenReturn(true);
+
+        var respuesta = controller.eliminarLibro(1L);
+
+        assertTrue(respuesta.getStatusCode().is4xxClientError());
+        verify(libroRepository, never()).deleteById(anyLong());
     }
 
     @Test

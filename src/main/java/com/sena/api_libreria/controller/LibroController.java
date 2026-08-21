@@ -3,6 +3,7 @@ package com.sena.api_libreria.controller;
 import com.sena.api_libreria.config.CloudinaryService;
 import com.sena.api_libreria.model.Libro;
 import com.sena.api_libreria.model.Usuario;
+import com.sena.api_libreria.repository.DetallePedidoRepository;
 import com.sena.api_libreria.repository.LibroRepository;
 import com.sena.api_libreria.repository.PedidoRepository;
 import org.springframework.http.HttpHeaders;
@@ -28,15 +29,18 @@ public class LibroController {
 
     private final LibroRepository libroRepository;
     private final PedidoRepository pedidoRepository;
+    private final DetallePedidoRepository detallePedidoRepository;
     private final CloudinaryService cloudinaryService;
 
     public LibroController(
             LibroRepository libroRepository,
             PedidoRepository pedidoRepository,
+            DetallePedidoRepository detallePedidoRepository,
             CloudinaryService cloudinaryService
     ) {
         this.libroRepository = libroRepository;
         this.pedidoRepository = pedidoRepository;
+        this.detallePedidoRepository = detallePedidoRepository;
         this.cloudinaryService = cloudinaryService;
     }
 
@@ -301,6 +305,10 @@ public class LibroController {
         }
 
         Libro libro = libroOpt.get();
+
+        if (detallePedidoRepository.existsByLibroId(id)) {
+            return ResponseEntity.badRequest().body("No se puede eliminar: el libro tiene pedidos asociados.");
+        }
 
         if (libro.getImagen() != null && !libro.getImagen().isBlank()) {
             cloudinaryService.eliminarArchivo(libro.getImagen());

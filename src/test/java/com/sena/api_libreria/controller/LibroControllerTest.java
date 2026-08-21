@@ -2,6 +2,7 @@ package com.sena.api_libreria.controller;
 
 import com.sena.api_libreria.config.CloudinaryService;
 import com.sena.api_libreria.model.Libro;
+import com.sena.api_libreria.repository.DetallePedidoRepository;
 import com.sena.api_libreria.repository.LibroRepository;
 import com.sena.api_libreria.repository.PedidoRepository;
 import org.junit.jupiter.api.Test;
@@ -16,8 +17,9 @@ class LibroControllerTest {
 
     private final LibroRepository libroRepository = mock(LibroRepository.class);
     private final PedidoRepository pedidoRepository = mock(PedidoRepository.class);
+    private final DetallePedidoRepository detallePedidoRepository = mock(DetallePedidoRepository.class);
     private final CloudinaryService cloudinaryService = mock(CloudinaryService.class);
-    private final LibroController controller = new LibroController(libroRepository, pedidoRepository, cloudinaryService);
+    private final LibroController controller = new LibroController(libroRepository, pedidoRepository, detallePedidoRepository, cloudinaryService);
 
     private Libro crearLibro(Long id, String titulo) {
         Libro libro = new Libro();
@@ -65,6 +67,7 @@ class LibroControllerTest {
     @Test
     void eliminarLibroExistenteRetorna200() {
         when(libroRepository.findById(1L)).thenReturn(Optional.of(crearLibro(1L, "1984")));
+        when(detallePedidoRepository.existsByLibroId(1L)).thenReturn(false);
 
         var respuesta = controller.eliminarLibro(1L);
 

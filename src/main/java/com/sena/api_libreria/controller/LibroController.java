@@ -13,6 +13,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.text.Normalizer;
 import java.io.IOException;
 import java.util.List;
@@ -257,10 +261,32 @@ public class LibroController {
         String archivo = libro.getArchivo();
 
         if (archivo.startsWith("http")) {
-            return ResponseEntity.status(302)
-                    .header(HttpHeaders.LOCATION, archivo)
-                    .header("X-File-Name", archivo.substring(archivo.lastIndexOf('/') + 1))
-                    .build();
+            try {
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(archivo))
+                        .GET()
+                        .build();
+                HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+
+                String nombreOriginal = archivo;
+                int slashIdx = nombreOriginal.lastIndexOf('/');
+                if (slashIdx >= 0) {
+                    nombreOriginal = nombreOriginal.substring(slashIdx + 1);
+                }
+                int queryIdx = nombreOriginal.indexOf('?');
+                if (queryIdx >= 0) {
+                    nombreOriginal = nombreOriginal.substring(0, queryIdx);
+                }
+
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreOriginal + "\"")
+                        .header("X-File-Name", nombreOriginal)
+                        .contentType(MediaType.APPLICATION_PDF)
+                        .body(response.body());
+            } catch (Exception e) {
+                return ResponseEntity.status(502).body("Error al descargar desde Cloudinary: " + e.getMessage());
+            }
         }
 
         return ResponseEntity.status(404).body("El archivo del libro no se encontro.");

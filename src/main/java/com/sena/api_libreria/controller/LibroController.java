@@ -291,6 +291,18 @@ public class LibroController {
                         .build();
                 HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
+                if (response.statusCode() != 200) {
+                    return ResponseEntity.status(502)
+                            .body("El archivo no esta disponible en Cloudinary (HTTP " + response.statusCode() + ").");
+                }
+
+                byte[] datos = response.body();
+
+                if (datos == null || datos.length == 0 || datos[0] != '%') {
+                    return ResponseEntity.status(502)
+                            .body("El archivo almacenado no es un PDF valido.");
+                }
+
                 String nombreOriginal = archivo;
                 int slashIdx = nombreOriginal.lastIndexOf('/');
                 if (slashIdx >= 0) {
@@ -305,7 +317,7 @@ public class LibroController {
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombreOriginal + "\"")
                         .header("X-File-Name", nombreOriginal)
                         .contentType(MediaType.APPLICATION_PDF)
-                        .body(response.body());
+                        .body(datos);
             } catch (Exception e) {
                 return ResponseEntity.status(502).body("Error al descargar desde Cloudinary: " + e.getMessage());
             }
